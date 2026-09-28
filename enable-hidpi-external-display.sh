@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# retinafy — enable simulated HiDPI ("Retina") scaling on external displays
+# enable-hidpi-external-display — enable simulated HiDPI ("Retina") scaling on external displays
 # that don't natively report a HiDPI mode to macOS.
 #
 # Requires macOS 26 (Tahoe) or later. No backward compatibility is provided
@@ -15,7 +15,7 @@ OVERRIDES_DIR="/Library/Displays/Contents/Resources/Overrides"
 SYS_OVERRIDES_DIR="/System/Library/Displays/Contents/Resources/Overrides"
 SYS_ICONS_PLIST="${SYS_OVERRIDES_DIR}/Icons.plist"
 FALLBACK_ICONS_PLIST="${SCRIPT_DIR}/Icons.plist"
-UNINSTALL_SCRIPT="${HOME}/.retinafy-disable"
+UNINSTALL_SCRIPT="${HOME}/.enable-hidpi-external-display-disable"
 PLISTBUDDY="/usr/libexec/PlistBuddy"
 
 WORKDIR=""
@@ -44,9 +44,9 @@ fi
 
 print_banner() {
     printf "%s\n" "${C_CYAN}${C_BOLD}"
-    printf "%s\n" "┌─────────────────────────────────────────┐"
-    printf "%s\n" "│  retinafy · HiDPI for external displays  │"
-    printf "%s\n" "└─────────────────────────────────────────┘${C_RESET}"
+    printf "%s\n" "┌─────────────────────────────────┐"
+    printf "%s\n" "│  enable-hidpi-external-display  │"
+    printf "%s\n" "└─────────────────────────────────┘${C_RESET}"
     printf "\n"
 }
 
@@ -105,7 +105,7 @@ require_macos26() {
     product="$(sw_vers -productVersion 2>/dev/null || echo 0)"
     major="${product%%.*}"
     if ! [[ "$major" =~ ^[0-9]+$ ]] || (( major < 26 )); then
-        die "retinafy requires macOS 26 (Tahoe) or later. Detected: ${product:-unknown}."
+        die "enable-hidpi-external-display requires macOS 26 (Tahoe) or later. Detected: ${product:-unknown}."
     fi
 }
 
@@ -601,7 +601,7 @@ confirm_or_revert() {
     fi
 
     printf "\n"
-    log_warn "If this display goes blank or wrong after rebooting, use \"Disable HiDPI\" or the recovery helper (~/.retinafy-disable)."
+    log_warn "If this display goes blank or wrong after rebooting, use \"Disable HiDPI\" or the recovery helper (~/.enable-hidpi-external-display-disable)."
     local secs=10
     while (( secs > 0 )); do
         printf "\r%s" "${C_YELLOW}› Press Enter to keep this change (auto-revert in ${secs}s)... ${C_RESET}"
@@ -622,7 +622,7 @@ confirm_or_revert() {
 write_uninstall_helper() {
     cat >"$UNINSTALL_SCRIPT" <<'EOS'
 #!/bin/bash
-# Emergency recovery helper for retinafy.
+# Emergency recovery helper for enable-hidpi-external-display.
 # Usable from macOS Recovery Mode's Terminal if the system won't boot
 # normally after enabling HiDPI: mount the system volume, cd into this
 # user's home directory from /Volumes/<disk>/Users/<you>, then run this
@@ -632,7 +632,7 @@ ROOT="../.."
 OVERRIDES="${ROOT}/Library/Displays/Contents/Resources/Overrides"
 
 if [[ ! -d "$OVERRIDES" ]]; then
-    echo "No retinafy overrides found at ${OVERRIDES}."
+    echo "No enable-hidpi-external-display overrides found at ${OVERRIDES}."
     exit 0
 fi
 
@@ -680,7 +680,7 @@ EOS
 
 disable_flow() {
     if [[ ! -d "$OVERRIDES_DIR" ]]; then
-        die "No retinafy overrides are installed."
+        die "No enable-hidpi-external-display overrides are installed."
     fi
 
     section "Installed display overrides"
@@ -693,7 +693,7 @@ disable_flow() {
     done
 
     if [[ $i -eq 0 ]]; then
-        die "No retinafy overrides are installed."
+        die "No enable-hidpi-external-display overrides are installed."
     fi
 
     printf "\n"
@@ -703,7 +703,7 @@ disable_flow() {
     read -r choice
 
     if [[ "$choice" == "a" ]]; then
-        log_warn "This deletes ${OVERRIDES_DIR} entirely, including anything there that wasn't installed by retinafy."
+        log_warn "This deletes ${OVERRIDES_DIR} entirely, including anything there that wasn't installed by enable-hidpi-external-display."
         prompt "Remove ALL overrides? [Y/n] (default: Yes): "
         read -r confirm_all
         [[ -z "$confirm_all" || "$confirm_all" =~ ^[Yy]$ ]] || die "Aborted."

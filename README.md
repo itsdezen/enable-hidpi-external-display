@@ -1,4 +1,4 @@
-# retinafy
+# enable-hidpi-external-display
 
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/itsdezen)
 
@@ -10,19 +10,19 @@ Requires **macOS 26 (Tahoe) or later**. Older releases are not supported.
 
 ## Install
 
-**Local** — clone the repo and double-click `retinafy.command`, or run it
+**Local** — clone the repo and double-click `enable-hidpi-external-display.command`, or run it
 from a terminal:
 
 ```bash
-git clone https://github.com/itsdezen/retinafy.git
-cd retinafy
-./retinafy.sh
+git clone https://github.com/itsdezen/enable-hidpi-external-display.git
+cd enable-hidpi-external-display
+./enable-hidpi-external-display.sh
 ```
 
 **Remote** — run directly without cloning:
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/itsdezen/retinafy/main/retinafy.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/itsdezen/enable-hidpi-external-display/main/enable-hidpi-external-display.sh)"
 ```
 
 (Icon customization needs the `icons/` folder next to the script, so the
@@ -35,7 +35,7 @@ Run the script and follow the prompts:
 
 1. **Enable HiDPI** — pick the external display, then choose how to derive
    the "Looks like" resolutions:
-   - **Auto** — retinafy reads the display's current (native) resolution
+   - **Auto** — enable-hidpi-external-display reads the display's current (native) resolution
      and generates the same spread of scale steps macOS computes for a real
      Retina display ("Larger Text" down to "More Space"), all locked to the
      display's real aspect ratio.
@@ -60,13 +60,13 @@ logo may look oversized on the very first reboot only.
   `/Library/Displays/Contents/Resources/Overrides` entirely.
 - If a change ever leaves a display unusable, boot into macOS Recovery,
   open Terminal, and run the helper script generated at
-  `~/.retinafy-disable` (or manually delete the folder above from the
+  `~/.enable-hidpi-external-display-disable` (or manually delete the folder above from the
   mounted system volume).
 
 ## The EDID compatibility patch
 
 Some monitors drop to a lower resolution after sleep/wake when using a
-plain override. retinafy can optionally patch a couple of feature-flag
+plain override. enable-hidpi-external-display can optionally patch a couple of feature-flag
 bytes in the display's own EDID (embedded only in its override file — your
 monitor's actual firmware is never touched) to work around this. It's only
 offered on Intel Macs, since Apple Silicon has no real EDID to read in the

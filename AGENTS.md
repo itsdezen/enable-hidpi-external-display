@@ -1,6 +1,6 @@
-# retinafy
+# enable-hidpi-external-display
 
-Single-file bash tool (`retinafy.sh`) that injects HiDPI display-override
+Single-file bash tool (`enable-hidpi-external-display.sh`) that injects HiDPI display-override
 profiles into `/Library/Displays/Contents/Resources/Overrides` on macOS 26+.
 
 ## Hard rules
@@ -21,15 +21,15 @@ profiles into `/Library/Displays/Contents/Resources/Overrides` on macOS 26+.
 
 ## Layout
 
-- `retinafy.sh` — all logic.
-- `retinafy.command` — double-click launcher, just calls `retinafy.sh`.
+- `enable-hidpi-external-display.sh` — all logic.
+- `enable-hidpi-external-display.command` — double-click launcher, just calls `enable-hidpi-external-display.sh`.
 - `icons/` — bundled `.icns` device icons.
 - `Icons.plist` — minimal fallback template, only used if the system has
   no `Icons.plist` of its own to merge into (shouldn't normally happen).
 
 ## Testing
 
-No test suite. Verify by sourcing the script (`source ./retinafy.sh`) and
+No test suite. Verify by sourcing the script (`source ./enable-hidpi-external-display.sh`) and
 calling functions directly — the `main` entry point is guarded so sourcing
 doesn't execute it. Never run the real `sudo` install path against this
 machine's display without explicit confirmation.

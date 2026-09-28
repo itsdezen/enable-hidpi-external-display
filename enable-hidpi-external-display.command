@@ -1,3 +1,3 @@
 #!/bin/bash
 DIR="$(cd "$(dirname "$0")" && pwd)"
-"$DIR/retinafy.sh"
+"$DIR/enable-hidpi-external-display.sh"
