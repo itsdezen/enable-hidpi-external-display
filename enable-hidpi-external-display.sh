@@ -474,7 +474,7 @@ patch_edid() {
 # Apple's own per-product entries (e.g. vendors:610:products:ae2f) carry it.
 # ---------------------------------------------------------------------------
 
-ICON_LABELS=("Pro Display XDR" "Studio Display XDR" "Studio Display" "iMac" "MacBook Pro 14\"" "MacBook Pro 16\"" "LG UltraFine 5K" "Generic display")
+ICON_LABELS=("Pro Display XDR" "Studio Display XDR" "Studio Display" "iMac" "MacBook Pro 14\"" "MacBook Pro 16\"" "LG UltraFine 5K" "Portable display (iPad Pro icon)" "Generic display")
 ICON_SOURCES=(
     ":vendors:6161706c:products:com.apple.pro-display-xdr"
     ":vendors:6161706c:products:com.apple.studio-display-xdr-2026"
@@ -483,6 +483,7 @@ ICON_SOURCES=(
     ":vendors:6161706c:products:com.apple.macbookpro-14-2026-space-black"
     ":vendors:6161706c:products:com.apple.macbookpro-16-2026-space-black"
     ":vendors:1e6d:products:5b11"
+    ":vendors:6161706c:products:com.apple.ipad-pro-12point9-1"
     ":vendors:6161706c:products:public.generic-lcd"
 )
 
