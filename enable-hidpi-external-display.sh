@@ -446,6 +446,10 @@ build_override_file() {
         printf '    </dict>\n'
         printf '</plist>\n'
     } >>"$DPI_FILE"
+
+    if ! plutil -lint -s "$DPI_FILE" >/dev/null 2>&1; then
+        die "Generated override file failed validation; aborting before touching the system."
+    fi
 }
 
 # Intel-only compatibility patch: some monitors fall back to a lower
@@ -590,7 +594,6 @@ install_override() {
     fi
 
     spin_ok "HiDPI enabled for ${NAME}. Reboot to apply."
-    log_info "The boot logo will look oversized on the very first reboot only."
 }
 
 # Scoped to one product: other displays from the same vendor share the

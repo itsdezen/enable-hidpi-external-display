@@ -40,8 +40,7 @@ Run the script and follow the prompts:
 2. **Disable HiDPI** — remove one display's override, or reset everything
    back to the macOS default.
 
-Reboot after enabling or disabling for the change to take effect. The boot
-logo may look oversized on the very first reboot only.
+Reboot after enabling or disabling for the change to take effect.
 
 ## Safety
 
