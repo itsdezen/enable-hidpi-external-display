@@ -23,7 +23,6 @@ profiles into `/Library/Displays/Contents/Resources/Overrides` on macOS 26+.
 
 - `enable-hidpi-external-display.sh` — all logic.
 - `enable-hidpi-external-display.command` — double-click launcher, just calls `enable-hidpi-external-display.sh`.
-- `icons/` — bundled `.icns` device icons.
 - `Icons.plist` — minimal fallback template, only used if the system has
   no `Icons.plist` of its own to merge into (shouldn't normally happen).
 

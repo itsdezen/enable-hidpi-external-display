@@ -9,7 +9,6 @@
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ICONS_DIR="${SCRIPT_DIR}/icons"
 
 OVERRIDES_DIR="/Library/Displays/Contents/Resources/Overrides"
 SYS_OVERRIDES_DIR="/System/Library/Displays/Contents/Resources/Overrides"
@@ -464,44 +463,53 @@ patch_edid() {
 # ---------------------------------------------------------------------------
 # Icon selection + Icons.plist merge
 #
-# Only the small "device shape" icon (a local .icns file) is patched here.
-# macOS 26 no longer renders the old image-based resolution-preview
-# illustration from Icons.plist's display-resolution-preview-icon /
-# resolution-preview-x/y/w/h keys — that UI element appears to be rendered
-# natively now, so patching those keys is a no-op left over from older
-# macOS versions and has been removed.
+# The Displays settings pane draws the display from the entry's
+# display-resolution-preview-icon (a .tiff plus the resolution-preview-*
+# frame geometry, with -90/-180/-270 variants for rotation); display-icon is
+# a UTI resolved through CoreTypes. Rather than bundling copies that go stale
+# with every macOS release, the chosen entry is copied verbatim from the
+# system Icons.plist — Apple keeps a catalog of every device it draws under
+# the pseudo-vendor 6161706c ("aapl"), keyed by UTI. Those catalog entries
+# omit display-icon (the key itself is the UTI), so it is added back the way
+# Apple's own per-product entries (e.g. vendors:610:products:ae2f) carry it.
 # ---------------------------------------------------------------------------
+
+ICON_LABELS=("Pro Display XDR" "Studio Display XDR" "Studio Display" "iMac" "MacBook Pro 14\"" "MacBook Pro 16\"" "LG UltraFine 5K" "Generic display")
+ICON_SOURCES=(
+    ":vendors:6161706c:products:com.apple.pro-display-xdr"
+    ":vendors:6161706c:products:com.apple.studio-display-xdr-2026"
+    ":vendors:6161706c:products:com.apple.studio-display-2026"
+    ":vendors:6161706c:products:com.apple.imac-2024-silver"
+    ":vendors:6161706c:products:com.apple.macbookpro-14-2026-space-black"
+    ":vendors:6161706c:products:com.apple.macbookpro-16-2026-space-black"
+    ":vendors:1e6d:products:5b11"
+    ":vendors:6161706c:products:public.generic-lcd"
+)
 
 choose_icon() {
     section "Display icon"
-    echo "  1) iMac"
-    echo "  2) MacBook"
-    echo "  3) MacBook Pro"
-    echo "  4) LG Display"
-    echo "  5) Pro Display XDR"
-    echo "  6) Don't change"
+    local i
+    for ((i = 0; i < ${#ICON_LABELS[@]}; i++)); do
+        echo "  $((i + 1))) ${ICON_LABELS[$i]}"
+    done
+    echo "  $((i + 1))) Don't change"
     printf "\n"
-    prompt "Choice [1-6]: "
+    prompt "Choice [1-$((i + 1))]: "
     read -r icon_choice
 
-    local device_icon_src=""
-
-    case "$icon_choice" in
-    1) device_icon_src="${ICONS_DIR}/iMac.icns" ;;
-    2) device_icon_src="${ICONS_DIR}/MacBook.icns" ;;
-    3) device_icon_src="${ICONS_DIR}/MacBookPro.icns" ;;
-    4) device_icon_src="${SYS_OVERRIDES_DIR}/DisplayVendorID-1e6d/DisplayProductID-5b11.icns" ;;
-    5) device_icon_src="${ICONS_DIR}/ProDisplayXDR.icns" ;;
-    6)
+    if ! [[ "$icon_choice" =~ ^[0-9]+$ ]] || (( icon_choice < 1 || icon_choice > i + 1 )); then
+        die "Invalid selection."
+    fi
+    if (( icon_choice == i + 1 )); then
         SKIP_ICON=1
         return
-        ;;
-    *)
-        die "Invalid selection."
-        ;;
-    esac
+    fi
 
-    DEVICE_ICON_SRC="$device_icon_src"
+    ICON_SOURCE="${ICON_SOURCES[$((icon_choice - 1))]}"
+    if ! "$PLISTBUDDY" -c "Print ${ICON_SOURCE}" "$SYS_ICONS_PLIST" >/dev/null 2>&1; then
+        log_warn "This macOS release has no \"${ICON_LABELS[$((icon_choice - 1))]}\" icon; leaving the icon unchanged."
+        SKIP_ICON=1
+    fi
 }
 
 merge_icons_plist() {
@@ -512,22 +520,25 @@ merge_icons_plist() {
         cp "${OVERRIDES_DIR}/Icons.plist" "$target"
     elif [[ -f "$SYS_ICONS_PLIST" ]]; then
         cp "$SYS_ICONS_PLIST" "$target"
-    elif [[ -f "$FALLBACK_ICONS_PLIST" ]]; then
-        cp "$FALLBACK_ICONS_PLIST" "$target"
     else
-        log_warn "No base Icons.plist found; skipping icon customization."
-        SKIP_ICON=1
-        return
+        cp "$FALLBACK_ICONS_PLIST" "$target"
+    fi
+
+    local entry="${WORKDIR}/icon-entry.plist"
+    "$PLISTBUDDY" -x -c "Print ${ICON_SOURCE}" "$SYS_ICONS_PLIST" >"$entry"
+    if ! "$PLISTBUDDY" -c "Print :display-icon" "$entry" >/dev/null 2>&1; then
+        "$PLISTBUDDY" -c "Add :display-icon string ${ICON_SOURCE##*:}" "$entry"
     fi
 
     # Icons.plist keys are the plain lowercase hex id (e.g. "1e6d", "5b11"),
     # matching Apple's own entries — not the decimal form used for the
     # DisplayVendorID/DisplayProductID integer fields elsewhere.
-    "$PLISTBUDDY" -c "Delete :vendors:${VID}:products:${PID}" "$target" >/dev/null 2>&1
+    local dest=":vendors:${VID}:products:${PID}"
+    "$PLISTBUDDY" -c "Delete ${dest}" "$target" >/dev/null 2>&1
     "$PLISTBUDDY" -c "Add :vendors:${VID} dict" "$target" >/dev/null 2>&1
     "$PLISTBUDDY" -c "Add :vendors:${VID}:products dict" "$target" >/dev/null 2>&1
-    "$PLISTBUDDY" -c "Add :vendors:${VID}:products:${PID} dict" "$target"
-    "$PLISTBUDDY" -c "Add :vendors:${VID}:products:${PID}:display-icon string ${OVERRIDES_DIR}/DisplayVendorID-${VID}/DisplayProductID-${PID}.icns" "$target"
+    "$PLISTBUDDY" -c "Add ${dest} dict" "$target"
+    "$PLISTBUDDY" -c "Merge ${entry} ${dest}" "$target"
 
     if ! plutil -lint -s "$target" >/dev/null 2>&1; then
         die "Generated Icons.plist failed validation; aborting before touching the system copy."
@@ -552,16 +563,14 @@ install_override() {
 
     sudo mkdir -p "${OVERRIDES_DIR}/DisplayVendorID-${VID}"
 
-    if [[ -n "${DEVICE_ICON_SRC:-}" ]]; then
-        cp "$DEVICE_ICON_SRC" "${WORKDIR}/DisplayVendorID-${VID}/DisplayProductID-${PID}.icns"
-    fi
-
     sudo cp -r "${WORKDIR}/DisplayVendorID-${VID}" "${OVERRIDES_DIR}/"
     sudo chown -R root:wheel "${OVERRIDES_DIR}/DisplayVendorID-${VID}"
     sudo chmod -R 0644 "${OVERRIDES_DIR}/DisplayVendorID-${VID}"/*
     sudo chmod 0755 "${OVERRIDES_DIR}/DisplayVendorID-${VID}"
 
     if [[ -n "${MERGED_ICONS_PLIST:-}" ]]; then
+        # Left behind by older versions, which pointed display-icon at a bundled copy.
+        sudo rm -f "${OVERRIDES_DIR}/DisplayVendorID-${VID}/DisplayProductID-${PID}.icns"
         sudo cp "$MERGED_ICONS_PLIST" "${OVERRIDES_DIR}/Icons.plist"
         sudo chown root:wheel "${OVERRIDES_DIR}/Icons.plist"
         sudo chmod 0644 "${OVERRIDES_DIR}/Icons.plist"

@@ -25,10 +25,6 @@ cd enable-hidpi-external-display
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/itsdezen/enable-hidpi-external-display/main/enable-hidpi-external-display.sh)"
 ```
 
-(Icon customization needs the `icons/` folder next to the script, so the
-local clone is the more complete option; the remote one-liner still works
-for the core HiDPI injection.)
-
 ## Usage
 
 Run the script and follow the prompts:
