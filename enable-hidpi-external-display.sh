@@ -321,32 +321,30 @@ select_display() {
 # Native resolution lookup (used by Auto mode)
 # ---------------------------------------------------------------------------
 
+# system_profiler's pixel fields report the current framebuffer, not the
+# panel: run while a scaled/HiDPI mode is active and they return the scaled
+# backing size. Read the panel's own native size instead:
+#   - Intel: first EDID detailed timing descriptor (the preferred timing).
+#   - Apple Silicon: NativeFormat*Pixels in the IOKit DisplayAttributes block.
 get_native_resolution() {
-    local vid_hex=$1 pid_hex=$2
-    [[ -z "$SP_PLIST" ]] && return 1
+    local vid_hex=$1 pid_hex=$2 edid=$3
+    local w h
 
-    local vid_dec=$((16#$vid_hex))
-    local pid_dec=$((16#$pid_hex))
-    local i=0 j hit pid_hit pixels
+    if [[ -n "$edid" ]]; then
+        [[ "${edid:108:4}" == "0000" ]] && return 1
+        w=$((0x${edid:112:2} + ((0x${edid:116:2} >> 4) << 8)))
+        h=$((0x${edid:118:2} + ((0x${edid:122:2} >> 4) << 8)))
+    else
+        local line
+        line="$(ioreg -l | grep "DisplayAttributes" |
+            grep "\"LegacyManufacturerID\"=$((16#$vid_hex))[,}]" |
+            grep "\"ProductID\"=$((16#$pid_hex))[,}]" | head -n 1)"
+        w="$(sed -n 's/.*"NativeFormatHorizontalPixels"=\([0-9]*\).*/\1/p' <<<"$line")"
+        h="$(sed -n 's/.*"NativeFormatVerticalPixels"=\([0-9]*\).*/\1/p' <<<"$line")"
+    fi
 
-    while true; do
-        "$PLISTBUDDY" -c "Print :SPDisplaysDataType:${i}:_name" "$SP_PLIST" >/dev/null 2>&1 || break
-        j=0
-        while true; do
-            hit="$("$PLISTBUDDY" -c "Print :SPDisplaysDataType:${i}:spdisplays_ndrvs:${j}:_spdisplays_display-vendor-id" "$SP_PLIST" 2>/dev/null)"
-            [[ -z "$hit" ]] && break
-            pid_hit="$("$PLISTBUDDY" -c "Print :SPDisplaysDataType:${i}:spdisplays_ndrvs:${j}:_spdisplays_display-product-id" "$SP_PLIST" 2>/dev/null)"
-            if [[ "$((16#$hit))" == "$vid_dec" && "$((16#$pid_hit))" == "$pid_dec" ]]; then
-                pixels="$("$PLISTBUDDY" -c "Print :SPDisplaysDataType:${i}:spdisplays_ndrvs:${j}:_spdisplays_pixels" "$SP_PLIST" 2>/dev/null)"
-                [[ -z "$pixels" ]] && return 1
-                echo "$pixels" | tr -d ' '
-                return 0
-            fi
-            j=$((j + 1))
-        done
-        i=$((i + 1))
-    done
-    return 1
+    [[ -z "$w" || -z "$h" || "$w" == 0 || "$h" == 0 ]] && return 1
+    echo "${w}x${h}"
 }
 
 # ---------------------------------------------------------------------------
@@ -744,13 +742,13 @@ enable_flow() {
     select_display
 
     local native=""
-    native="$(get_native_resolution "$VID" "$PID")"
+    native="$(get_native_resolution "$VID" "$PID" "$EDID")"
 
     section "Resolution setup for \"${NAME}\" (${VID}:${PID})"
     if [[ -n "$native" ]]; then
         log_info "Detected native resolution: ${native}"
     else
-        log_warn "Could not auto-detect the native resolution via system_profiler."
+        log_warn "Could not auto-detect the native resolution."
     fi
 
     local native_w="" native_h=""
