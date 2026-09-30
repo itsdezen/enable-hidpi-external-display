@@ -357,6 +357,7 @@ get_native_resolution() {
 
 LADDER_RATIOS=(0.677248677 0.758597884 0.894179894 1.0 1.190476190)
 LADDER_LABELS=("Larger Text" "Larger Text" "Larger Text" "Default" "More Space")
+MIN_LOOKS_LIKE_SIDE=1000
 
 RESOLUTIONS=()
 RESOLUTION_LABELS=()
@@ -372,6 +373,12 @@ compute_auto_ladder() {
         f="${LADDER_RATIOS[$i]}"
         w=$(awk -v n="$native_w" -v f="$f" 'BEGIN{printf "%d", int(n*f/2 + 0.5)}')
         h=$(awk -v n="$native_h" -v f="$f" 'BEGIN{printf "%d", int(n*f/2 + 0.5)}')
+        # "Looks like" sizes under 1000px on the long side are too cramped to
+        # be useful on an external monitor. The long side, not the width, so
+        # portrait panels are judged the same way. Default is exempt: it is
+        # the pixel-exact 2x mode, so dropping it would leave nothing sharp
+        # on small panels.
+        (( (w > h ? w : h) < MIN_LOOKS_LIKE_SIDE )) && [[ "${LADDER_LABELS[$i]}" != "Default" ]] && continue
         entry="${w}x${h}"
         [[ "$seen" == *"|${entry}|"* ]] && continue
         seen="${seen}|${entry}|"
@@ -778,6 +785,9 @@ enable_flow() {
         native_w="${native%x*}"
         native_h="${native#*x}"
         compute_auto_ladder "$native_w" "$native_h"
+        if [[ ${#RESOLUTIONS[@]} -eq 1 ]]; then
+            log_warn "At ${native_w}x${native_h} every HiDPI size except ${DEFAULT_RESOLUTION} is under ${MIN_LOOKS_LIKE_SIDE}px — HiDPI gains little on a panel this small."
+        fi
 
         echo "  1) Auto   — generate the same variant ladder macOS uses for real Retina displays"
         local i
