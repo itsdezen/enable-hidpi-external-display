@@ -15,6 +15,8 @@ UNINSTALL_SCRIPT="${HOME}/.enable-hidpi-external-display-disable"
 PLISTBUDDY="/usr/libexec/PlistBuddy"
 
 WORKDIR=""
+PREV_OVERRIDE=""
+PREV_ICONS_PLIST=""
 SUDO_KEEPALIVE_PID=""
 DRY_RUN=""
 
@@ -105,8 +107,9 @@ require_macos26() {
     fi
 }
 
+# uname -m reports x86_64 when the terminal runs under Rosetta.
 is_apple_silicon() {
-    [[ "$(uname -m)" == "arm64" ]]
+    [[ "$(sysctl -n hw.optional.arm64 2>/dev/null)" == "1" ]]
 }
 
 start_sudo_keepalive() {
@@ -179,37 +182,33 @@ discover_displays_intel() {
     done
 }
 
+# Each DisplayAttributes line is parsed on its own so vendor, product and
+# name always come from the same display. Parsing them with separate greps
+# lets the lists drift apart: empty names vanish in word splitting, and
+# Apple displays' names stay in the list after their ids are filtered out —
+# which can put the built-in panel's name on an external display.
 discover_displays_apple_silicon() {
-    local vends prods names
-    vends=($(ioreg -l | grep "DisplayAttributes" | sed -n 's/.*"LegacyManufacturerID"=\([0-9]*\).*/\1/p'))
-    prods=($(ioreg -l | grep "DisplayAttributes" | sed -n 's/.*"ProductID"=\([0-9]*\).*/\1/p'))
-    # IFS/noglob must be restored explicitly: an assignment-only command like
-    # `IFS=x names=(...)` does NOT scope IFS temporarily the way it would
-    # before a real command — it leaks into the rest of the script.
-    local old_ifs="$IFS"
-    IFS=$'\n'
-    set -o noglob
-    names=($(ioreg -l | grep "DisplayAttributes" | sed -n 's/.*"ProductName"="\([^"]*\)".*/\1/p'))
-    set +o noglob
-    IFS="$old_ifs"
+    local line vend_dec prod_dec vid pid name
+    while IFS= read -r line; do
+        vend_dec="$(sed -n 's/.*"LegacyManufacturerID"=\([0-9]*\).*/\1/p' <<<"$line")"
+        prod_dec="$(sed -n 's/.*"ProductID"=\([0-9]*\).*/\1/p' <<<"$line")"
+        # Without a vendor id the Apple gate below can't be applied.
+        [[ -z "$vend_dec" || -z "$prod_dec" ]] && continue
 
-    # vends[]/prods[] are decimal (from ioreg's LegacyManufacturerID/ProductID),
-    # unlike the hex substrings discover_displays_intel deals with — hex_norm
-    # would misinterpret them, so convert straight to hex here instead.
-    local i vid pid name_index=0
-    for ((i = 0; i < ${#prods[@]}; i++)); do
-        vid=$(printf "%x" "${vends[$i]}")
+        # ioreg's ids are decimal, unlike the hex substrings
+        # discover_displays_intel deals with, so hex_norm doesn't apply.
+        vid=$(printf "%x" "$vend_dec")
         [[ "$vid" == "$APPLE_VENDOR_ID" ]] && continue
+        pid=$(printf "%x" "$prod_dec")
 
-        pid=$(printf "%x" "${prods[$i]}")
-        name="${names[$name_index]:-Unknown Display}"
-        name_index=$((name_index + 1))
+        name="$(sed -n 's/.*"ProductName"="\([^"]*\)".*/\1/p' <<<"$line")"
+        [[ -z "$name" ]] && name="Unknown Display"
 
         DISP_VID+=("$vid")
         DISP_PID+=("$pid")
         DISP_NAME+=("$name")
         DISP_EDID+=("")
-    done
+    done < <(ioreg -l | grep '"DisplayAttributes" = ')
 }
 
 # Best-effort corroboration only: if system_profiler reports this pair as
@@ -563,6 +562,20 @@ install_override() {
 
     spin "Installing override for ${NAME}..."
 
+    # Snapshot what is being replaced so the confirm-or-revert window can
+    # restore a previous install instead of deleting it outright.
+    local existing="${OVERRIDES_DIR}/DisplayVendorID-${VID}/DisplayProductID-${PID}"
+    PREV_OVERRIDE=""
+    PREV_ICONS_PLIST=""
+    if [[ -f "$existing" ]]; then
+        PREV_OVERRIDE="${WORKDIR}/prev-override"
+        cp "$existing" "$PREV_OVERRIDE"
+    fi
+    if [[ -f "${OVERRIDES_DIR}/Icons.plist" ]]; then
+        PREV_ICONS_PLIST="${WORKDIR}/prev-Icons.plist"
+        cp "${OVERRIDES_DIR}/Icons.plist" "$PREV_ICONS_PLIST"
+    fi
+
     sudo mkdir -p "${OVERRIDES_DIR}/DisplayVendorID-${VID}"
 
     sudo cp -r "${WORKDIR}/DisplayVendorID-${VID}" "${OVERRIDES_DIR}/"
@@ -571,8 +584,6 @@ install_override() {
     sudo chmod 0755 "${OVERRIDES_DIR}/DisplayVendorID-${VID}"
 
     if [[ -n "${MERGED_ICONS_PLIST:-}" ]]; then
-        # Left behind by older versions, which pointed display-icon at a bundled copy.
-        sudo rm -f "${OVERRIDES_DIR}/DisplayVendorID-${VID}/DisplayProductID-${PID}.icns"
         sudo cp "$MERGED_ICONS_PLIST" "${OVERRIDES_DIR}/Icons.plist"
         sudo chown root:wheel "${OVERRIDES_DIR}/Icons.plist"
         sudo chmod 0644 "${OVERRIDES_DIR}/Icons.plist"
@@ -625,9 +636,23 @@ confirm_or_revert() {
     done
     printf "\n"
     log_warn "No response — reverting automatically."
-    remove_override "$VID" "$PID"
-    log_ok "Reverted. Nothing will change on next boot."
+    if [[ -n "$PREV_OVERRIDE" ]]; then
+        restore_previous_override
+        log_ok "Reverted to the previously installed override."
+    else
+        remove_override "$VID" "$PID"
+        log_ok "Reverted. Nothing will change on next boot."
+    fi
     return 1
+}
+
+restore_previous_override() {
+    sudo cp "$PREV_OVERRIDE" "${OVERRIDES_DIR}/DisplayVendorID-${VID}/DisplayProductID-${PID}"
+    if [[ -n "$PREV_ICONS_PLIST" ]]; then
+        sudo cp "$PREV_ICONS_PLIST" "${OVERRIDES_DIR}/Icons.plist"
+    elif [[ -f "${OVERRIDES_DIR}/Icons.plist" ]]; then
+        sudo "$PLISTBUDDY" -c "Delete :vendors:${VID}:products:${PID}" "${OVERRIDES_DIR}/Icons.plist" >/dev/null 2>&1
+    fi
 }
 
 write_uninstall_helper() {
@@ -814,11 +839,17 @@ enable_flow() {
         prompt "${list_prompt}: "
         read -r manual_list
         [[ -z "$manual_list" ]] && manual_list="$prefill"
+        set -o noglob
         RESOLUTIONS=($manual_list)
+        set +o noglob
         RESOLUTION_LABELS=()
         [[ ${#RESOLUTIONS[@]} -gt 0 ]] || die "No resolutions entered."
+        local r
+        for r in "${RESOLUTIONS[@]}"; do
+            [[ "$r" =~ ^[1-9][0-9]*x[1-9][0-9]*$ ]] || die "Invalid resolution \"${r}\" — use WIDTHxHEIGHT, e.g. 1280x800."
+        done
         if [[ -n "$native_w" ]]; then
-            local r w h
+            local w h
             for r in "${RESOLUTIONS[@]}"; do
                 w="${r%x*}"; h="${r#*x}"
                 if aspect_ratio_warning "$native_w" "$native_h" "$w" "$h"; then
@@ -855,6 +886,11 @@ enable_flow() {
     fi
 
     if confirm_or_revert; then
+        # Left behind by older versions, which pointed display-icon at a
+        # bundled copy. Only dropped once kept, so a revert can still use it.
+        if [[ -n "${MERGED_ICONS_PLIST:-}" ]]; then
+            sudo rm -f "${OVERRIDES_DIR}/DisplayVendorID-${VID}/DisplayProductID-${PID}.icns"
+        fi
         write_uninstall_helper
     fi
 }
