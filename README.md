@@ -31,13 +31,13 @@ Run the script and follow the prompts:
 
 1. **Enable HiDPI** — pick the external display, then choose how to derive
    the "Looks like" resolutions:
-   - **Auto** — enable-hidpi-external-display reads the display's current (native) resolution
+   - **Auto** — enable-hidpi-external-display reads the panel's native resolution
      and generates the same spread of scale steps macOS computes for a real
      Retina display ("Larger Text" down to "More Space"), all locked to the
      display's real aspect ratio.
    - **Manual** — type your own list of resolutions if you want full
      control.
-2. **Disable HiDPI** — remove one installed override, or reset everything
+2. **Disable HiDPI** — remove one display's override, or reset everything
    back to the macOS default.
 
 Reboot after enabling or disabling for the change to take effect. The boot
@@ -55,9 +55,10 @@ logo may look oversized on the very first reboot only.
 - Everything is reversible: use the in-app "Disable HiDPI" option, or delete
   `/Library/Displays/Contents/Resources/Overrides` entirely.
 - If a change ever leaves a display unusable, boot into macOS Recovery,
-  open Terminal, and run the helper script generated at
-  `~/.enable-hidpi-external-display-disable` (or manually delete the folder above from the
-  mounted system volume).
+  mount the "Macintosh HD - Data" volume in Disk Utility, then in Terminal run
+  the helper generated at `~/.enable-hidpi-external-display-disable`:
+  `bash "/Volumes/Macintosh HD - Data/Users/<you>/.enable-hidpi-external-display-disable"`
+  (or manually delete the folder above from that Data volume).
 
 ## The EDID compatibility patch
 

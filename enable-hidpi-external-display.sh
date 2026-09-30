@@ -8,12 +8,9 @@
 
 set -u
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 OVERRIDES_DIR="/Library/Displays/Contents/Resources/Overrides"
 SYS_OVERRIDES_DIR="/System/Library/Displays/Contents/Resources/Overrides"
 SYS_ICONS_PLIST="${SYS_OVERRIDES_DIR}/Icons.plist"
-FALLBACK_ICONS_PLIST="${SCRIPT_DIR}/Icons.plist"
 UNINSTALL_SCRIPT="${HOME}/.enable-hidpi-external-display-disable"
 PLISTBUDDY="/usr/libexec/PlistBuddy"
 
@@ -519,10 +516,8 @@ merge_icons_plist() {
     local target="${WORKDIR}/Icons.plist"
     if [[ -f "${OVERRIDES_DIR}/Icons.plist" ]]; then
         cp "${OVERRIDES_DIR}/Icons.plist" "$target"
-    elif [[ -f "$SYS_ICONS_PLIST" ]]; then
-        cp "$SYS_ICONS_PLIST" "$target"
     else
-        cp "$FALLBACK_ICONS_PLIST" "$target"
+        cp "$SYS_ICONS_PLIST" "$target"
     fi
 
     local entry="${WORKDIR}/icon-entry.plist"
@@ -555,7 +550,6 @@ install_override() {
     if [[ -n "$DRY_RUN" ]]; then
         log_info "[dry-run] would install ${OVERRIDES_DIR}/DisplayVendorID-${VID}/DisplayProductID-${PID}"
         [[ -n "${MERGED_ICONS_PLIST:-}" ]] && log_info "[dry-run] would merge ${OVERRIDES_DIR}/Icons.plist"
-        log_info "[dry-run] would set DisplayResolutionEnabled in com.apple.windowserver"
         log_ok "[dry-run] HiDPI would be enabled for ${NAME}. No changes were made."
         return
     fi
@@ -577,22 +571,24 @@ install_override() {
         sudo chmod 0644 "${OVERRIDES_DIR}/Icons.plist"
     fi
 
-    sudo defaults write /Library/Preferences/com.apple.windowserver DisplayResolutionEnabled -bool YES
-
     spin_ok "HiDPI enabled for ${NAME}. Reboot to apply."
     log_info "The boot logo will look oversized on the very first reboot only."
 }
 
+# Scoped to one product: other displays from the same vendor share the
+# DisplayVendorID-* folder and the vendors:<vid> Icons.plist entry.
 remove_override() {
-    local vid_hex=$1
+    local vid_hex=$1 pid_hex=$2
+    local vendor_dir="${OVERRIDES_DIR}/DisplayVendorID-${vid_hex}"
     if [[ -n "$DRY_RUN" ]]; then
-        log_info "[dry-run] would remove ${OVERRIDES_DIR}/DisplayVendorID-${vid_hex}"
+        log_info "[dry-run] would remove ${vendor_dir}/DisplayProductID-${pid_hex}"
         return
     fi
     if [[ -f "${OVERRIDES_DIR}/Icons.plist" ]]; then
-        sudo "$PLISTBUDDY" -c "Delete :vendors:${vid_hex}" "${OVERRIDES_DIR}/Icons.plist" >/dev/null 2>&1
+        sudo "$PLISTBUDDY" -c "Delete :vendors:${vid_hex}:products:${pid_hex}" "${OVERRIDES_DIR}/Icons.plist" >/dev/null 2>&1
     fi
-    sudo rm -rf "${OVERRIDES_DIR}/DisplayVendorID-${vid_hex}"
+    sudo rm -f "${vendor_dir}/DisplayProductID-${pid_hex}" "${vendor_dir}/DisplayProductID-${pid_hex}.icns"
+    sudo rmdir "$vendor_dir" 2>/dev/null
 }
 
 # Safety net: writing the override only takes effect after reboot, so it
@@ -622,7 +618,7 @@ confirm_or_revert() {
     done
     printf "\n"
     log_warn "No response — reverting automatically."
-    remove_override "$VID"
+    remove_override "$VID" "$PID"
     log_ok "Reverted. Nothing will change on next boot."
     return 1
 }
@@ -631,13 +627,18 @@ write_uninstall_helper() {
     cat >"$UNINSTALL_SCRIPT" <<'EOS'
 #!/bin/bash
 # Emergency recovery helper for enable-hidpi-external-display.
-# Usable from macOS Recovery Mode's Terminal if the system won't boot
-# normally after enabling HiDPI: mount the system volume, cd into this
-# user's home directory from /Volumes/<disk>/Users/<you>, then run this
-# script.
+#
+# From macOS Recovery: open Disk Utility and mount the "<disk> - Data"
+# volume (unlock it if FileVault is on), then in Terminal run:
+#   bash "/Volumes/<disk> - Data/Users/<you>/.enable-hidpi-external-display-disable"
+# From a normal boot, run it with sudo instead.
+#
+# /Library and /Users live on the Data volume, so paths are resolved from
+# this script's own location rather than the current directory.
 set -u
-ROOT="../.."
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OVERRIDES="${ROOT}/Library/Displays/Contents/Resources/Overrides"
+PLISTBUDDY="/usr/libexec/PlistBuddy"
 
 if [[ ! -d "$OVERRIDES" ]]; then
     echo "No enable-hidpi-external-display overrides found at ${OVERRIDES}."
@@ -646,12 +647,12 @@ fi
 
 echo "Installed display overrides:"
 i=0
-declare -a dirs
-for d in "${OVERRIDES}"/DisplayVendorID-*; do
-    [[ -d "$d" ]] || continue
+declare -a files
+for f in "${OVERRIDES}"/DisplayVendorID-*/DisplayProductID-*; do
+    [[ -f "$f" && "$(basename "$f")" != *.* ]] || continue
     i=$((i + 1))
-    dirs[$i]="$d"
-    echo "  ${i}) $(basename "$d")"
+    files[$i]="$f"
+    echo "  ${i}) ${f#"${OVERRIDES}/"}"
 done
 
 if [[ $i -eq 0 ]]; then
@@ -671,13 +672,20 @@ if [[ "$choice" == "a" ]]; then
 fi
 
 if [[ "$choice" =~ ^[0-9]+$ && "$choice" -ge 1 && "$choice" -le $i ]]; then
-    target="${dirs[$choice]}"
-    vid="${target##*DisplayVendorID-}"
+    target="${files[$choice]}"
+    vendor_dir="$(dirname "$target")"
+    vid="${vendor_dir##*DisplayVendorID-}"
+    pid="${target##*DisplayProductID-}"
     if [[ -f "${OVERRIDES}/Icons.plist" ]]; then
-        "${ROOT}/usr/libexec/PlistBuddy" -c "Delete :vendors:${vid}" "${OVERRIDES}/Icons.plist" 2>/dev/null
+        if [[ -x "$PLISTBUDDY" ]]; then
+            "$PLISTBUDDY" -c "Delete :vendors:${vid}:products:${pid}" "${OVERRIDES}/Icons.plist" 2>/dev/null
+        else
+            echo "PlistBuddy not available here; its Icons.plist entry was left in place (harmless)."
+        fi
     fi
-    rm -rf "$target"
-    echo "Removed $(basename "$target")."
+    rm -f "$target" "${target}.icns"
+    rmdir "$vendor_dir" 2>/dev/null
+    echo "Removed ${target#"${OVERRIDES}/"}."
 else
     echo "Invalid choice."
     exit 1
@@ -692,12 +700,12 @@ disable_flow() {
     fi
 
     section "Installed display overrides"
-    local dirs=() i=0
-    for d in "${OVERRIDES_DIR}"/DisplayVendorID-*; do
-        [[ -d "$d" ]] || continue
+    local files=() i=0 f
+    for f in "${OVERRIDES_DIR}"/DisplayVendorID-*/DisplayProductID-*; do
+        [[ -f "$f" && "$(basename "$f")" != *.* ]] || continue
         i=$((i + 1))
-        dirs[$i]="$d"
-        printf "  %d) %s\n" "$i" "$(basename "$d")"
+        files[$i]="$f"
+        printf "  %d) %s\n" "$i" "${f#"${OVERRIDES_DIR}/"}"
     done
 
     if [[ $i -eq 0 ]]; then
@@ -732,12 +740,15 @@ disable_flow() {
     fi
 
     if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= i )); then
-        local target="${dirs[$choice]}"
-        local vid_hex="${target##*DisplayVendorID-}"
-        [[ -z "$DRY_RUN" ]] && spin "Removing $(basename "$target")..."
-        remove_override "$vid_hex"
+        local target="${files[$choice]}"
+        local label="${target#"${OVERRIDES_DIR}/"}"
+        local vid_hex="${label%%/*}"
+        vid_hex="${vid_hex#DisplayVendorID-}"
+        local pid_hex="${target##*DisplayProductID-}"
+        [[ -z "$DRY_RUN" ]] && spin "Removing ${label}..."
+        remove_override "$vid_hex" "$pid_hex"
         [[ -z "$DRY_RUN" ]] && spin_stop
-        log_ok "Removed $(basename "$target"). Reboot to apply."
+        log_ok "Removed ${label}. Reboot to apply."
     else
         die "Invalid choice."
     fi
@@ -878,6 +889,8 @@ main() {
     esac
 }
 
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+# BASH_SOURCE is unset under `bash -c "$(curl ...)"`, which set -u would
+# otherwise abort on before main ever runs.
+if [[ "${BASH_SOURCE[0]:-$0}" == "$0" ]]; then
     main "$@"
 fi
