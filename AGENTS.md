@@ -30,3 +30,15 @@ No test suite. Verify by sourcing the script (`source ./enable-hidpi-external-di
 calling functions directly — the `main` entry point is guarded so sourcing
 doesn't execute it. Never run the real `sudo` install path against this
 machine's display without explicit confirmation.
+
+## Git conventions
+
+- Commit subjects use Conventional Commits: `<type>(<scope>): <summary>`;
+  omit the scope when it adds no clarity. Use lowercase types such as
+  `feat`, `fix`, `docs`, `refactor`, `chore`, and `test`.
+- Write concise English summaries that explain the change; do not add a
+  trailing period. Keep the subject focused on one change.
+- Name topic branches with up to three lowercase, hyphen-separated words;
+  do not use slash-separated type prefixes (for example, `display-recovery`).
+- Keep `main` as the stable branch. Push a topic branch to its matching
+  origin branch.
